@@ -102,11 +102,11 @@ def load_obj(filename):
     vertices_n = np.array(vertices_n, np.float32)
     if not vertices_n.size:
         vertices_n = None
-    faces = np.array(faces, np.int32) - 1
-    faces_t = np.array(faces_t, np.int32) - 1
+    faces = np.array(faces, np.int64) - 1
+    faces_t = np.array(faces_t, np.int64) - 1
     if not faces_t.size:
         faces_t = None
-    faces_n = np.array(faces_n, np.int32) - 1
+    faces_n = np.array(faces_n, np.int64) - 1
     if not faces_n.size:
         faces_n = None
     return vertices, vertices_t, vertices_n, faces, faces_t, faces_n, textures
