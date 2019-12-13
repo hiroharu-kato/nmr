@@ -76,7 +76,7 @@ class Cameras(object):
             raise NotImplementedError
         elif self.rotation_matrices.ndim == 2:
             rotation_matrices = self.rotation_matrices.permute(1, 0)
-            vertices = torch.matmul(vertices, self.rotation_matrices)
+            vertices = torch.matmul(vertices, rotation_matrices)
 
         intrinsic_matrices = self.intrinsic_matrices.permute(1, 0)
         vertices = torch.matmul(vertices, intrinsic_matrices)
