@@ -80,11 +80,53 @@ class Distribute(torch.autograd.Function):
         return data_out
 
     def backward(self, data, face):
-        pass
+        raise NotImplementedError
 
 
 def distribute(data, indices, is_batch_data=False, is_batch_indices=False, default_value=-1):
     return Distribute.apply(data, indices, is_batch_data, is_batch_indices, default_value)
+
+
+class Mask(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, data, masks):
+        # PyTorch to CuPy
+        data_in = cp.asarray(data)
+        masks = cp.asarray(masks)
+        data_out = data_in.copy()
+        dim = data_in.size / masks.size
+
+        # distribute
+        data_in = cp.ascontiguousarray(data_in)
+        masks = cp.ascontiguousarray(masks)
+        data_out = cp.ascontiguousarray(data_out)
+        kernel = cp.ElementwiseKernel(
+            'raw S data_out, int64 mask',
+            '',
+            string.Template('''
+                if (mask == 0) {
+                    ${dtype}* p = (${dtype}*)&data_out[i * ${dim}];
+                    for (int j = 0; j < ${dim}; j++) *p++ = 0;
+                }
+            ''').substitute(
+                dim=dim,
+                dtype=utils.get_dtype_in_cuda(data_out.dtype),
+            ),
+            'function',
+        )
+        kernel(data_out, masks)
+
+        # CuPy to PyTorch
+        data_out = cpm.astensor(data_out)
+
+        return data_out
+
+    def backward(self, data, face):
+        raise NotImplementedError
+
+
+def mask(data, masks):
+    return Mask.apply(data, masks)
 
 
 def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_batch_vertices):
@@ -121,7 +163,7 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_bat
         loop = cp.arange(image_h * image_w).astype('int64')
     kernel = cp.ElementwiseKernel(
         'int64 _, raw float32 faces',
-        'int64 face_index, bool is_foreground',
+        'int64 face_index, int64 is_foreground',
         string.Template('''
             const int ih = ${image_h};
             const int iw = ${image_w};
@@ -222,5 +264,5 @@ def compute_weight_map(vertex_maps, foreground_maps):
     w2 = (yp - y0) * (x1 - x0) - (y1 - y0) * (xp - x0)
     w = torch.stack((w0, w1, w2), dim=2)
     w = w / w.sum(-1, keepdim=True)
-    # w = mask(w, foreground_maps)
+    w = mask(w, foreground_maps)
     return w

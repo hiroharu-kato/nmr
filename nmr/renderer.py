@@ -41,6 +41,8 @@ class Renderer(object):
         # differentiable w.r.t vertex_maps
         weight_maps = rasterization.compute_weight_map(vertex_maps, foreground_maps)
 
+        
+
         import skimage.io
         a = face_index_maps
         b = foreground_maps.cpu().numpy().astype('float32')
