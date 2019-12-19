@@ -66,7 +66,7 @@ class Cameras(object):
             )
         self.intrinsic_matrices = intrinsic_matrices
 
-    def __call__(self, vertices):
+    def convert_to_camera_coordinates(self, vertices):
         if self.translations.ndim == 2:
             vertices = vertices + self.translations
         elif self.translations.ndim == 1:
@@ -77,7 +77,9 @@ class Cameras(object):
         elif self.rotation_matrices.ndim == 2:
             rotation_matrices = self.rotation_matrices.permute(1, 0)
             vertices = torch.matmul(vertices, rotation_matrices)
+        return vertices
 
+    def convert_to_screen_coordinates(self, vertices):
         intrinsic_matrices = self.intrinsic_matrices.permute(1, 0)
         vertices = torch.matmul(vertices, intrinsic_matrices)
         if vertices.ndim == 3:
@@ -90,7 +92,19 @@ class Cameras(object):
             vertices_y = vertices[:, 1] / vertices[:, 2]
             vertices_z = vertices[:, 2]
             vertices = torch.cat((vertices_x[:, None], vertices_y[:, None], vertices_z[:, None]), dim=1)
+        return vertices
 
+    def process_vertices(self, vertices):
+        vertices = self.convert_to_camera_coordinates(vertices)
+        vertices = self.convert_to_screen_coordinates(vertices)
+        return vertices
+
+    def process_vertices_n(self, vertices):
+        if self.rotation_matrices.ndim == 3:
+            raise NotImplementedError
+        elif self.rotation_matrices.ndim == 2:
+            rotation_matrices = self.rotation_matrices.permute(1, 0)
+            vertices = torch.matmul(vertices, rotation_matrices)
         return vertices
 
 
