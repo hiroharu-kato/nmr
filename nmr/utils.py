@@ -1,5 +1,3 @@
-import numpy as np
-import tinyobjloader
 import torch
 import math
 

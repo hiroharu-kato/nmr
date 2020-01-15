@@ -404,8 +404,9 @@ def compute_color_maps(vertex_t_maps, textures, texture_params_maps, foreground_
     return color_maps
 
 
-def reflectance_maps(normal_w_maps):
+def reflectance_maps(normal_w_maps, normal_c_maps):
     return torch.relu(normal_w_maps[:, :, 1]) * 0.3 + 0.7
+    # return torch.relu(-normal_c_maps[:, :, 2]) * 0.5 + 0.5
 
 
 def compute_normals(vertices, faces):

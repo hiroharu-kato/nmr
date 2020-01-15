@@ -108,7 +108,7 @@ class Renderer(object):
             vertex_t_maps, textures, texture_params_maps, foreground_maps, is_batch_vertices)
 
         #
-        reflectance_maps = rasterization.reflectance_maps(normal_w_maps)
+        reflectance_maps = rasterization.reflectance_maps(normal_w_maps, normal_c_maps)
 
         #
         rgb_maps = color_maps * reflectance_maps[:, :, None]
