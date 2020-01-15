@@ -56,14 +56,14 @@ def load_obj(filename):
     faces_t = []
     faces_n = []
     vertices = []
-    vertices_n = []
+    normals = []
     vertices_t = []
     texture_params = []
     textures = None
 
     vertices.append([0, 0, 0])
     vertices_t.append([0, 0])
-    vertices_n.append([0, 1, 0])
+    normals.append([0, 1, 0])
     with open(filename) as f:
         lines = f.readlines()
     for line in lines:
@@ -84,7 +84,7 @@ def load_obj(filename):
         elif k == 'v':
             vertices.append(list(map(float, vs)))
         elif k == 'vn':
-            vertices_n.append(list(map(float, vs)))
+            normals.append(list(map(float, vs)))
         elif k == 'vt':
             uv = np.array(list(map(float, vs)))
             a = np.floor(uv)
@@ -126,9 +126,9 @@ def load_obj(filename):
     vertices_t = np.array(vertices_t, np.float32)
     if not vertices_t.size:
         vertices_t = None
-    vertices_n = np.array(vertices_n, np.float32)
-    if not vertices_n.size:
-        vertices_n = None
+    normals = np.array(normals, np.float32)
+    if not normals.size:
+        normals = None
     faces = np.array(faces, np.int64)
     faces_t = np.array(faces_t, np.int64)
     if not faces_t.size:
@@ -137,8 +137,8 @@ def load_obj(filename):
     if not faces_n.size:
         faces_n = None
     texture_params = np.array(texture_params, np.int64)
-    if vertices_n.shape[0] == 1:
+    if normals.shape[0] == 1:
         # normal is not defined
-        vertices_n = None
+        normals = None
         faces_n = None
-    return vertices, vertices_t, vertices_n, faces, faces_t, faces_n, textures, texture_params
+    return vertices, vertices_t, normals, faces, faces_t, faces_n, textures, texture_params

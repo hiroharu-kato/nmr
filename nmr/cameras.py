@@ -101,13 +101,13 @@ class Cameras(object):
         vertices = self.convert_to_screen_coordinates(vertices)
         return vertices
 
-    def process_vertices_n(self, vertices):
+    def process_normals(self, normals):
         if self.rotation_matrices.ndim == 3:
             raise NotImplementedError
         elif self.rotation_matrices.ndim == 2:
             rotation_matrices = self.rotation_matrices.permute(1, 0)
-            vertices = torch.matmul(vertices, rotation_matrices)
-        return vertices
+            normals = torch.matmul(normals, rotation_matrices)
+        return normals
 
 
 def create_cameras(

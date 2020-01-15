@@ -31,7 +31,7 @@ class TestRendererBlender(unittest.TestCase):
     image_h = image_w = 224
 
     def load_mesh(self, object_id):
-        vertices, vertices_t, vertices_n, faces, faces_t, faces_n, textures, texture_params = nmr.load_obj(
+        vertices, vertices_t, normals, faces, faces_t, faces_n, textures, texture_params = nmr.load_obj(
             self.filename_obj % object_id)
         # NMR is a left-handed coordinate system while Blender is right-handed.
         vertices[:, 2] *= -1
@@ -43,13 +43,13 @@ class TestRendererBlender(unittest.TestCase):
         faces_t = torch.as_tensor(faces_t).cuda()
 
         # Normal vectors may not be contained in .obj.
-        if vertices_n is not None:
-            vertices_n = torch.as_tensor(vertices_n).cuda()
+        if normals is not None:
+            normals = torch.as_tensor(normals).cuda()
             faces_n = torch.as_tensor(faces_n).cuda()
 
         # Returns nmr.Mesh.
         meshes = nmr.create_meshes(
-            vertices=vertices, vertices_t=vertices_t, vertices_n=vertices_n, faces=faces, faces_t=faces_t,
+            vertices=vertices, vertices_t=vertices_t, normals=normals, faces=faces, faces_t=faces_t,
             faces_n=faces_n, textures=textures, texture_params=texture_params)
 
         return meshes

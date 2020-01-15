@@ -11,7 +11,7 @@ class Renderer(object):
 
     def __call__(self, meshes, cameras, lights, backgrounds, types=('rgb', 'alpha', 'depth', 'normal')):
         vertices_w = meshes.vertices
-        vertices_n_w = meshes.vertices_n
+        normals_w = meshes.normals
         vertices_t = meshes.vertices_t
         faces = meshes.faces
         faces_n = meshes.faces_n
@@ -24,8 +24,8 @@ class Renderer(object):
         vertices_s = cameras.process_vertices(vertices_w)
 
         # world coordinates to camera coordinates
-        if vertices_n_w is not None:
-            vertices_n_c = cameras.process_vertices_n(vertices_n_w)
+        if normals_w is not None:
+            normals_c = cameras.process_normals(normals_w)
 
         if self.anti_aliasing:
             vertices_s = vertices_s * 2
@@ -64,14 +64,14 @@ class Renderer(object):
             vertex_n_index_maps = rasterization.distribute(faces_n, face_index_maps, False, is_batch_vertices, -1)
 
             # vertex_n_w_maps: [batch_size, image_h, image_w, (p0, p1, p2), (x, y, z)]
-            # differentiable w.r.t vertices_n_w
+            # differentiable w.r.t normals_w
             vertex_n_w_maps = rasterization.distribute(
-                vertices_n_w, vertex_n_index_maps, is_batch_vertices, is_batch_vertices, default_value=0.)
+                normals_w, vertex_n_index_maps, is_batch_vertices, is_batch_vertices, default_value=0.)
 
             # vertex_n_c_maps: [batch_size, image_h, image_w, (p0, p1, p2), (x, y, z)]
-            # differentiable w.r.t vertices_n_c
+            # differentiable w.r.t normals_c
             vertex_n_c_maps = rasterization.distribute(
-                vertices_n_c, vertex_n_index_maps, is_batch_vertices, is_batch_vertices, default_value=0.)
+                normals_c, vertex_n_index_maps, is_batch_vertices, is_batch_vertices, default_value=0.)
 
             # normal_w_maps, normal_c_maps: [batch_size, image_h, image_w, 3]
             # differentiable w.r.t vertex_n_w_maps, vertex_n_c_maps, weight_maps
@@ -79,7 +79,7 @@ class Renderer(object):
                 vertex_n_w_maps, vertex_n_c_maps, vertex_maps, weight_maps, foreground_maps)
         else:
             normals_w = rasterization.compute_normals(vertices_w, faces)
-            normals_c = cameras.process_vertices_n(normals_w)
+            normals_c = cameras.process_normals(normals_w)
             normal_w_maps = rasterization.distribute(
                 normals_w, face_index_maps, is_batch_vertices, is_batch_vertices, default_value=0.)
             normal_c_maps = rasterization.distribute(
