@@ -1,10 +1,13 @@
 import os
 import unittest
-import numpy as np
-import torch
-import skimage
-import tqdm
+
+# Dependency on cpm can be removed when new PyTorch with
+# [this pull request](https://github.com/pytorch/pytorch/pull/24947) is released.
 import chainer_pytorch_migration as cpm
+import numpy as np
+import skimage
+import torch
+import tqdm
 
 import nmr
 

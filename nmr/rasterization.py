@@ -1,7 +1,9 @@
 import string
-import cupy as cp
+
 import chainer_pytorch_migration as cpm
+import cupy as cp
 import torch
+
 from . import utils
 
 

@@ -1,7 +1,8 @@
+import collections
 import os
 import warnings
+
 import numpy as np
-import collections
 import skimage.io
 
 
