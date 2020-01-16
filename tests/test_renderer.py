@@ -41,6 +41,8 @@ class TestRendererBlender(unittest.TestCase):
         faces = torch.as_tensor(faces).cuda()
         vertices_t = torch.as_tensor(vertices_t).cuda()
         faces_t = torch.as_tensor(faces_t).cuda()
+        textures = torch.as_tensor(textures).cuda()
+        texture_params = torch.as_tensor(texture_params).cuda()
 
         # Normal vectors may not be contained in .obj.
         if normals is not None:
@@ -54,10 +56,19 @@ class TestRendererBlender(unittest.TestCase):
 
         return meshes
 
-    def load_camera(self, object_id, view_num):
-        with open(self.filename_views % object_id) as f:
-            viewpoints = f.readlines()[view_num]
-        azimuth, elevation, _, distance = map(float, viewpoints.split())
+    def load_camera(self, object_id, view_num=None):
+        if view_num is not None:
+            # load only single viewpoint
+            with open(self.filename_views % object_id) as f:
+                viewpoints = f.readlines()[view_num]
+            azimuth, elevation, _, distance = map(float, viewpoints.split())
+        else:
+            # load all viewpoints
+            with open(self.filename_views % object_id) as f:
+                viewpoints = f.readlines()
+            azimuth = np.array([float(line.split()[0]) for line in viewpoints], np.float32)
+            elevation = np.array([float(line.split()[1]) for line in viewpoints], np.float32)
+            distance = np.array([float(line.split()[3]) for line in viewpoints], np.float32)
 
         # Angles are given as degrees.
         azimuth = np.radians(azimuth + 90)  # X and Z is swapped.
@@ -83,6 +94,40 @@ class TestRendererBlender(unittest.TestCase):
 
             for view_num in tqdm.tqdm(range(0, 20)):
                 cameras = self.load_camera(oid, view_num)
+                backgrounds = nmr.Backgrounds()
+
+                renderer = nmr.Renderer()
+                images = renderer(meshes, cameras, None, backgrounds)  # [height, width, (RGBAD)]
+                alpha_map = images[:, :, 3].cpu().numpy()
+                depth_map = images[:, :, 4].cpu().numpy()
+
+                # Assertion of alpha map.
+                # There can be small differences, but they must not be greater than one.
+                # (There must not be a difference in the presence or absence of an object.)
+                ref_rgba = skimage.io.imread(self.filename_ref_rgba % (oid, view_num)).astype(np.float32) / 255
+                ref_alpha = ref_rgba[:, :, 3]
+                diff_alpha = ref_alpha - alpha_map
+                assert -1 < diff_alpha.min()
+                assert diff_alpha.max() < 1
+
+                # Assertion of depth map.
+                # Difference between depth maps should be small (0.01) at least 90% of pixels.
+                diff_threshold = 0.01
+                diff_max_ratio = 0.1
+                ref_depth = skimage.io.imread(self.filename_ref_depth % (oid, view_num)).astype(np.float32)
+                ref_depth[ref_depth == 65535] = 0
+                ref_depth = ref_depth / 65535. * 20
+                diff_depth = ref_depth - depth_map
+                diff_ratio = (diff_threshold < diff_depth[ref_alpha == 1]).mean()
+                assert diff_ratio < diff_max_ratio
+
+    def _test_mask_depth_batch(self):
+        """Test whether a rendered foreground and depth maps by NMR match these by Blender."""
+        for oid in tqdm.tqdm(self.object_ids):
+            meshes = self.load_mesh(oid)
+
+            for view_num in tqdm.tqdm(range(0, 20)):
+                cameras = self.load_camera(oid)
                 backgrounds = nmr.Backgrounds()
 
                 renderer = nmr.Renderer()

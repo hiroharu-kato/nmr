@@ -5,6 +5,25 @@ import torch
 from . import utils
 
 
+def create_rotation_matrices_by_looking_at(origin, at, up, device):
+    # create rotation matrices from (origin, at, up).
+    # origin can be [batch_size, 3] or [3]
+    if at is None:
+        at = torch.as_tensor([0, 0, 0], dtype=torch.float32, device=device)
+    if up is None:
+        up = torch.as_tensor([0, 1, 0], dtype=torch.float32, device=device)
+    origin, at, up = utils.broadcast(origin, at, up)
+    z = utils.normalize(at - origin, axis=-1)
+    x = utils.normalize(torch.cross(up, z), axis=-1)
+    y = utils.normalize(torch.cross(z, x), axis=-1)
+    if origin.ndim == 2:
+        rotation_matrices = torch.cat((x[:, None, :], y[:, None, :], z[:, None, :]), axis=1)
+    else:
+        rotation_matrices = torch.cat((x[None, :], y[None, :], z[None, :]), axis=0)
+    translations = -origin
+    return rotation_matrices, translations
+
+
 class Cameras(object):
     def __init__(
             self, rotation_matrices=None, translations=None, origin=None, at=None, up=None,
@@ -16,29 +35,9 @@ class Cameras(object):
         # rotation_matrices: [batch_size, 3, 3] or [3, 3]
         # translations: [batch_size, 3] or [3]
         if rotation_matrices is None:
-            # create rotation matrices from (origin, at, up).
-            # origin can be [batch_size, 3] or [3]
-            if at is None:
-                at = torch.as_tensor([0, 0, 0], dtype=torch.float32, device=device)
-            if up is None:
-                up = torch.as_tensor([0, 1, 0], dtype=torch.float32, device=device)
-            if max(origin.ndim, at.ndim, up.ndim) == 2:
-                if origin.ndim == 1:
-                    origin = origin[None, :]
-                elif at.ndim == 1:
-                    at = at[None, :]
-                elif up.ndim == 1:
-                    up = up[None, :]
-            z = utils.normalize(at - origin, axis=-1)
-            x = utils.normalize(torch.cross(up, z), axis=-1)
-            y = utils.normalize(torch.cross(z, x), axis=-1)
-            if origin.ndim == 2:
-                rotation_matrices = torch.cat((x[:, None, :], y[:, None, :], z[:, None, :]), axis=1)
-            else:
-                rotation_matrices = torch.cat((x[None, :], y[None, :], z[None, :]), axis=0)
-            translations = origin
+            rotation_matrices, translations = create_rotation_matrices_by_looking_at(origin, at, up, device)
         self.rotation_matrices = rotation_matrices
-        self.translations = -translations
+        self.translations = translations
 
         if intrinsic_matrices is None:
             if viewing_angles_x is None:
@@ -69,16 +68,20 @@ class Cameras(object):
         self.intrinsic_matrices = intrinsic_matrices
 
     def convert_to_camera_coordinates(self, vertices):
-        if self.translations.ndim == 2:
-            vertices = vertices + self.translations
-        elif self.translations.ndim == 1:
-            vertices = vertices + self.translations[None, :]
+        translations = self.translations.unsqueeze(-2)
+        if vertices.ndim < translations.ndim:
+            vertices = vertices.unsqueeze(-3)
+        if translations.ndim < vertices.ndim:
+            translations = self.translations.unsqueeze(-3)
+        vertices = vertices + translations
 
         if self.rotation_matrices.ndim == 3:
-            raise NotImplementedError
+            rotation_matrices = self.rotation_matrices.permute(0, 2, 1)
         elif self.rotation_matrices.ndim == 2:
             rotation_matrices = self.rotation_matrices.permute(1, 0)
-            vertices = torch.matmul(vertices, rotation_matrices)
+        else:
+            Exception
+        vertices = torch.matmul(vertices, rotation_matrices)
         return vertices
 
     def convert_to_screen_coordinates(self, vertices):
@@ -103,10 +106,12 @@ class Cameras(object):
 
     def process_normals(self, normals):
         if self.rotation_matrices.ndim == 3:
-            raise NotImplementedError
+            rotation_matrices = self.rotation_matrices.permute(0, 2, 1)
         elif self.rotation_matrices.ndim == 2:
             rotation_matrices = self.rotation_matrices.permute(1, 0)
-            normals = torch.matmul(normals, rotation_matrices)
+        else:
+            Exception
+        normals = torch.matmul(normals, rotation_matrices)
         return normals
 
 
@@ -114,6 +119,6 @@ def create_cameras(
         rotation_matrices=None, translations=None, origin=None, at=None, up=None,
         intrinsic_matrices=None, viewing_angles_y=None, viewing_angles_x=None, image_h=256, image_w=256,
 ):
-        return Cameras(
-            rotation_matrices, translations, origin, at, up, intrinsic_matrices, viewing_angles_y,
-            viewing_angles_x, image_h, image_w)
+    return Cameras(
+        rotation_matrices, translations, origin, at, up, intrinsic_matrices, viewing_angles_y,
+        viewing_angles_x, image_h, image_w)
