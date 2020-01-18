@@ -119,16 +119,15 @@ class Downsample(torch.autograd.Function):
         raise NotImplementedError
 
 
-def downsample(data, foreground_maps):
-    if foreground_maps is None:
-        data = data.type(torch.float32)
-        return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
+def downsample(data, foreground_maps, is_batch):
+    # import IPython
+    # IPython.embed()
+    # if foreground_maps is not None:
+    #     data = data * foreground_maps
+    if is_batch:
+        return (data[:, 0::2, 0::2] + data[:, 1::2, 0::2] + data[:, 0::2, 1::2] + data[:, 1::2, 1::2]) / 4
     else:
-        is_batch = foreground_maps.ndim == 3
-        if is_batch:
-            return (data[:, 0::2, 0::2] + data[:, 1::2, 0::2] + data[:, 0::2, 1::2] + data[:, 1::2, 1::2]) / 4
-        else:
-            return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
+        return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
     # if foreground_maps is None:
     #     data = data.type(torch.float32)
     #     return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
@@ -310,11 +309,12 @@ def compute_normal_maps(vertex_n_w_maps, vertex_n_c_maps, vertex_maps, weight_ma
 
 
 def compute_normal_maps_no_weight(normal_w_maps, normal_c_maps, foreground_maps):
-    normal_sign = (normal_c_maps[:, :, 2] <= 0)
-    normal_w_maps = normal_w_maps * normal_sign[:, :, None] - normal_w_maps * torch.logical_not(normal_sign)[:, :, None]
-    normal_c_maps = normal_c_maps * normal_sign[:, :, None] - normal_c_maps * torch.logical_not(normal_sign)[:, :, None]
-    normal_w_maps = normal_w_maps / torch.sqrt(torch.sum(normal_w_maps ** 2, dim=2, keepdim=True))
-    normal_c_maps = normal_c_maps / torch.sqrt(torch.sum(normal_c_maps ** 2, dim=2, keepdim=True))
+    normal_sign = (normal_c_maps[:, :, :, 2] <= 0)
+    normal_sign = normal_sign.unsqueeze(-1)
+    normal_w_maps = normal_w_maps * normal_sign - normal_w_maps * torch.logical_not(normal_sign)
+    normal_c_maps = normal_c_maps * normal_sign - normal_c_maps * torch.logical_not(normal_sign)
+    normal_w_maps = normal_w_maps * torch.rsqrt(torch.sum(normal_w_maps ** 2, dim=3, keepdim=True))
+    normal_c_maps = normal_c_maps * torch.rsqrt(torch.sum(normal_c_maps ** 2, dim=3, keepdim=True))
     normal_w_maps = mask(normal_w_maps, foreground_maps)
     normal_c_maps = mask(normal_c_maps, foreground_maps)
     return normal_w_maps, normal_c_maps
@@ -366,14 +366,14 @@ def reflectance_maps(normal_w_maps, normal_c_maps):
 
 
 def compute_normals(vertices, faces):
-    vs = vertices[faces]
-    v0 = vs[:, 0]
-    v1 = vs[:, 1]
-    v2 = vs[:, 2]
+    vs = vertices[:, faces]
+    v0 = vs[:, :, 0]
+    v1 = vs[:, :, 1]
+    v2 = vs[:, :, 2]
     e01 = v1 - v0
     e02 = v2 - v0
     normals = torch.cross(e01, e02)
-    normals * torch.rsqrt((normals ** 2).sum(axis=1, keepdims=True))
+    normals = normals * torch.rsqrt((normals ** 2).sum(axis=2, keepdims=True))
     return normals
 
 
