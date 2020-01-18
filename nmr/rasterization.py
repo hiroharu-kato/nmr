@@ -14,7 +14,13 @@ def distribute(data, indices, foreground_maps, is_batch_data=False, is_batch_ind
         if not is_batch_indices:
             data = data[:, indices]
         else:
-            data = torch.stack([d[i] for d, i in zip(data, indices)])
+            if data.shape[0] == indices.shape[0] != 1:
+                data = torch.stack([d[i] for d, i in zip(data, indices)])
+            else:
+                if data.shape[0] == 1:
+                    return data[0, indices]
+                else:
+                    raise NotImplementedError
     data = mask(data, foreground_maps, default_value)
     return data
 
@@ -23,6 +29,7 @@ class Mask(torch.autograd.Function):
     @staticmethod
     def forward(ctx, data, masks, default_value):
         # PyTorch to CuPy
+        device = data.device
         data_in = cp.asarray(data)
         masks = cp.asarray(masks)
         data_out = data_in.copy()
@@ -49,7 +56,7 @@ class Mask(torch.autograd.Function):
         kernel(data_out, masks)
 
         # CuPy to PyTorch
-        data_out = torch.as_tensor(data_out)
+        data_out = torch.as_tensor(data_out, device=device)
 
         return data_out
 
@@ -96,6 +103,7 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far):
     #   - [num_faces, 3]
 
     # PyTorch to CuPy
+    device = vertices.device
     vertices = cp.asarray(vertices)
     faces = cp.asarray(faces)
     num_faces = faces.shape[0]
@@ -182,8 +190,8 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far):
     foreground_maps = foreground_maps.reshape((-1, image_h, image_w))
 
     # CuPy to PyTorch
-    face_index_maps = torch.as_tensor(face_index_maps)
-    foreground_maps = torch.as_tensor(foreground_maps)
+    face_index_maps = torch.as_tensor(face_index_maps, device=device)
+    foreground_maps = torch.as_tensor(foreground_maps, device=device)
 
     return face_index_maps, foreground_maps
 
