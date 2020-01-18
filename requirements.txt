@@ -2,6 +2,6 @@ tqdm
 numpy
 scikit-image
 cupy
-torch
-chainer_pytorch_migration
+torch >= 1.4.0
+
 

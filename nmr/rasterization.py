@@ -1,7 +1,6 @@
 import functools
 import string
 
-import chainer_pytorch_migration as cpm
 import cupy as cp
 import torch
 
@@ -50,7 +49,7 @@ class Mask(torch.autograd.Function):
         kernel(data_out, masks)
 
         # CuPy to PyTorch
-        data_out = cpm.astensor(data_out)
+        data_out = torch.as_tensor(data_out)
 
         return data_out
 
@@ -183,8 +182,8 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far):
     foreground_maps = foreground_maps.reshape((-1, image_h, image_w))
 
     # CuPy to PyTorch
-    face_index_maps = cpm.astensor(face_index_maps)
-    foreground_maps = cpm.astensor(foreground_maps)
+    face_index_maps = torch.as_tensor(face_index_maps)
+    foreground_maps = torch.as_tensor(foreground_maps)
 
     return face_index_maps, foreground_maps
 

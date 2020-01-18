@@ -5,15 +5,12 @@ import unittest
 # Dependency on cpm can be removed when new PyTorch with
 # [this pull request](https://github.com/pytorch/pytorch/pull/24947) is released.
 # This is described in the "CuPy bridge" section of the Chainer-PyTorch Migration Guide.
-import chainer_pytorch_migration as cpm
 import numpy as np
 import skimage
 import torch
 import tqdm
 
 import nmr
-
-cpm.use_torch_in_cupy_malloc()
 
 
 class TestRendererBlender(unittest.TestCase):
@@ -168,12 +165,11 @@ class TestRendererBlender(unittest.TestCase):
         output_directory = '/tmp'
         view_num = 9
 
+        renderer = nmr.Renderer(self.image_h, self.image_w)
+        backgrounds = nmr.Backgrounds()
         for oid in tqdm.tqdm(self.object_ids):
             meshes = self.load_mesh(oid)
             cameras = self.load_camera(oid, view_num)
-            backgrounds = nmr.Backgrounds()
-
-            renderer = nmr.Renderer(self.image_h, self.image_w)
             images = renderer(meshes, cameras, None, backgrounds)
 
             images = (images[:, :, :4]).cpu().numpy()
@@ -182,6 +178,22 @@ class TestRendererBlender(unittest.TestCase):
 
             images_b = skimage.io.imread(self.filename_ref_rgba % (oid, view_num))
             skimage.io.imsave(os.path.join(output_directory, '%s_blender.png' % oid), images_b)
+
+    def test_rgb_batch(self):
+        """Quantitative evaluation of rendered images. Outputs have to be checked by humans."""
+        output_directory = '/tmp'
+        view_num = 9
+
+        renderer = nmr.Renderer(self.image_h, self.image_w)
+        backgrounds = nmr.Backgrounds()
+        for oid in tqdm.tqdm(self.object_ids):
+            meshes = self.load_mesh(oid)
+            cameras = self.load_camera(oid)
+            images = renderer(meshes, cameras, None, backgrounds)
+
+            images = (images[view_num, :, :, :4]).cpu().numpy()
+            images = np.clip((images * 255), 0, 255).astype('uint8')
+            skimage.io.imsave(os.path.join(output_directory, '%s_nmr_b.png' % oid), images)
 
 
 if __name__ == '__main__':
