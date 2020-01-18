@@ -1,3 +1,4 @@
+import functools
 import string
 
 import chainer_pytorch_migration as cpm
@@ -57,120 +58,56 @@ class Mask(torch.autograd.Function):
         raise NotImplementedError
 
 
-class Downsample(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, data, foreground_maps):
-        # PyTorch to CuPy
-        data_in = cp.asarray(data)
-        foreground_maps = cp.asarray(foreground_maps)
-
-        # create placeholder of output
-        image_h, image_w = data.shape[:2]
-        dim = data_in.size // foreground_maps.size
-        if dim == 1:
-            data_out = cp.zeros((image_h // 2, image_w // 2), dtype=data_in.dtype)
-        else:
-            data_out = cp.zeros((image_h // 2, image_w // 2, dim), dtype=data_in.dtype)
-
-        # distribute
-        data_in = cp.ascontiguousarray(data_in)
-        foreground_maps = cp.ascontiguousarray(foreground_maps)
-        data_out = cp.ascontiguousarray(data_out)
-        loop = cp.arange(image_h / 2 * image_w / 2).astype('int64')
-        kernel = cp.ElementwiseKernel(
-            'int64 _, raw S data_in, raw int64 foreground_maps',
-            'raw S data_out',
-            string.Template('''
-                int y = i / (${image_w} / 2);
-                int x = i % (${image_w} / 2);
-                int i1 = (y * 2 + 0) * ${image_w} + (x * 2 + 0);
-                int i2 = (y * 2 + 1) * ${image_w} + (x * 2 + 0);
-                int i3 = (y * 2 + 0) * ${image_w} + (x * 2 + 1);
-                int i4 = (y * 2 + 1) * ${image_w} + (x * 2 + 1);
-                int w1 = foreground_maps[i1];
-                int w2 = foreground_maps[i2];
-                int w3 = foreground_maps[i3];
-                int w4 = foreground_maps[i4];
-                float w = w1 + w2 + w3 + w4;
-                if (w == 0) return;
-                for (int j = 0; j < ${dim}; j++) {
-                    ${dtype} v = (
-                        w1 * data_in[i1 * ${dim} + j] +
-                        w2 * data_in[i2 * ${dim} + j] +
-                        w3 * data_in[i3 * ${dim} + j] +
-                        w4 * data_in[i4 * ${dim} + j]) / w;
-                    data_out[i * ${dim} + j] = v;
-                }
-            ''').substitute(
-                image_w=image_w,
-                dim=dim,
-                dtype=utils.get_dtype_in_cuda(data_in.dtype),
-            ),
-            'function',
-        )
-        kernel(loop, data_in, foreground_maps, data_out)
-
-        # CuPy to PyTorch
-        data_out = cpm.astensor(data_out)
-
-        return data_out
-
-    def backward(self, data, face):
-        raise NotImplementedError
-
-
-def downsample(data, foreground_maps, is_batch):
-    # import IPython
-    # IPython.embed()
-    # if foreground_maps is not None:
-    #     data = data * foreground_maps
-    if is_batch:
-        return (data[:, 0::2, 0::2] + data[:, 1::2, 0::2] + data[:, 0::2, 1::2] + data[:, 1::2, 1::2]) / 4
+def downsample(data, foreground_maps):
+    if foreground_maps is None:
+        return (data[:, 0::2, 0::2] + data[:, 1::2, 0::2] + data[:, 0::2, 1::2] + data[:, 1::2, 1::2]) / 4.
     else:
-        return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
-    # if foreground_maps is None:
-    #     data = data.type(torch.float32)
-    #     return (data[0::2, 0::2] + data[1::2, 0::2] + data[0::2, 1::2] + data[1::2, 1::2]) / 4
-    # else:
-    #     return Downsample.apply(data, foreground_maps)
+        weights = foreground_maps
+        while data.ndim != weights.ndim:
+            weights = weights.unsqueeze(-1)
+        d00 = data[:, 0::2, 0::2]
+        d01 = data[:, 0::2, 1::2]
+        d10 = data[:, 1::2, 0::2]
+        d11 = data[:, 1::2, 1::2]
+        w00 = weights[:, 0::2, 0::2]
+        w01 = weights[:, 0::2, 1::2]
+        w10 = weights[:, 1::2, 0::2]
+        w11 = weights[:, 1::2, 1::2]
+        data = d00 * w00 + d01 * w01 + d10 * w10 + d11 * w11
+        weights = w00 + w01 + w10 + w11
+        data = data / weights
+        f00 = foreground_maps[:, 0::2, 0::2]
+        f01 = foreground_maps[:, 0::2, 1::2]
+        f10 = foreground_maps[:, 1::2, 0::2]
+        f11 = foreground_maps[:, 1::2, 1::2]
+        foreground_maps = functools.reduce(torch.max, (f00, f01, f10, f11))
+        data = mask(data, foreground_maps)
+        return data
 
 
 def mask(data, masks, default_value=0):
     return Mask.apply(data, masks, default_value)
 
 
-def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_batch_vertices):
+def compute_face_index_maps(vertices, faces, image_h, image_w, near, far):
     # vertices:
-    #   - [batch_size, num_vertices, 3] if is_batch_vertices
-    #   - [num_vertices, 3]             if not is_batch_vertices
+    #   - [batch_size, num_vertices, 3] if vertices are shared in batch
+    #   - [1, num_vertices, 3]          if vertices are not shared in batch
     # faces:
     #   - [num_faces, 3]
 
     # PyTorch to CuPy
     vertices = cp.asarray(vertices)
     faces = cp.asarray(faces)
-
-    # assertion of shapes
-    if is_batch_vertices:
-        assert vertices.ndim == 3
-    else:
-        assert vertices.ndim == 2
-    assert faces.ndim == 2
     num_faces = faces.shape[0]
 
     # face indices to face coordinates
-    if is_batch_vertices:
-        faces = vertices[:, faces]
-    else:
-        faces = vertices[faces]
+    faces = vertices[:, faces]
 
     #
     faces = cp.ascontiguousarray(faces)
-    if is_batch_vertices:
-        batch_size = vertices.shape[0]
-        loop = cp.arange(batch_size * image_h * image_w).astype('int64')
-    else:
-        loop = cp.arange(image_h * image_w).astype('int64')
+    batch_size = vertices.shape[0]
+    loop = cp.arange(batch_size * image_h * image_w).astype('int64')
     kernel = cp.ElementwiseKernel(
         'int64 _, raw float32 faces',
         'int64 face_index, int64 is_foreground',
@@ -178,8 +115,7 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_bat
             const int ih = ${image_h};
             const int iw = ${image_w};
             const int nf = ${num_faces};
-            int bn = 0;
-            if (${is_batch_vertices}) bn = i / (ih * iw);  // batch number
+            int bn = i / (ih * iw);  // batch number
             const int pn = i % (ih * iw);  // pixel number
             const float yp = ih - (pn / ih + 0.5);
             const float xp = pn % ih + 0.5;
@@ -238,18 +174,13 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_bat
             image_w=image_w,
             near=near,
             far=far,
-            is_batch_vertices=int(is_batch_vertices),
             depth_min_delta=1e-4,
         ),
         'function',
     )
     face_index_maps, foreground_maps = kernel(loop, faces)
-    if is_batch_vertices:
-        face_index_maps = face_index_maps.reshape((-1, image_h, image_w))
-        foreground_maps = foreground_maps.reshape((-1, image_h, image_w))
-    else:
-        face_index_maps = face_index_maps.reshape((image_h, image_w))
-        foreground_maps = foreground_maps.reshape((image_h, image_w))
+    face_index_maps = face_index_maps.reshape((-1, image_h, image_w))
+    foreground_maps = foreground_maps.reshape((-1, image_h, image_w))
 
     # CuPy to PyTorch
     face_index_maps = cpm.astensor(face_index_maps)
@@ -258,28 +189,21 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far, is_bat
     return face_index_maps, foreground_maps
 
 
-def compute_weight_map(vertex_maps, foreground_maps, is_batch):
-    if is_batch:
-        x0 = vertex_maps[:, :, :, 0, 0]
-        x1 = vertex_maps[:, :, :, 1, 0]
-        x2 = vertex_maps[:, :, :, 2, 0]
-        y0 = vertex_maps[:, :, :, 0, 1]
-        y1 = vertex_maps[:, :, :, 1, 1]
-        y2 = vertex_maps[:, :, :, 2, 1]
-    else:
-        x0 = vertex_maps[:, :, 0, 0]
-        x1 = vertex_maps[:, :, 1, 0]
-        x2 = vertex_maps[:, :, 2, 0]
-        y0 = vertex_maps[:, :, 0, 1]
-        y1 = vertex_maps[:, :, 1, 1]
-        y2 = vertex_maps[:, :, 2, 1]
+def compute_weight_map(vertex_maps, foreground_maps):
+    x0 = vertex_maps[:, :, :, 0, 0]
+    x1 = vertex_maps[:, :, :, 1, 0]
+    x2 = vertex_maps[:, :, :, 2, 0]
+    y0 = vertex_maps[:, :, :, 0, 1]
+    y1 = vertex_maps[:, :, :, 1, 1]
+    y2 = vertex_maps[:, :, :, 2, 1]
+
     image_h, image_w = vertex_maps.shape[-4:-2]
     yp = image_h - (torch.arange(image_h, dtype=torch.float32, device=vertex_maps.device) + 0.5)
     xp = torch.arange(image_w, dtype=torch.float32, device=vertex_maps.device) + 0.5
     yp, xp = torch.broadcast_tensors(yp[:, None], xp[None, :])
-    if is_batch:
-        yp = yp.unsqueeze(0)
-        xp = xp.unsqueeze(0)
+    yp = yp.unsqueeze(0)
+    xp = xp.unsqueeze(0)
+
     w0 = (yp - y1) * (x2 - x1) - (y2 - y1) * (xp - x1)
     w1 = (yp - y2) * (x0 - x2) - (y0 - y2) * (xp - x2)
     w2 = (yp - y0) * (x1 - x0) - (y1 - y0) * (xp - x0)
@@ -290,21 +214,15 @@ def compute_weight_map(vertex_maps, foreground_maps, is_batch):
 
 
 def compute_depth_maps(vertex_maps, weight_maps, foreground_maps):
-    is_batch_vertices = vertex_maps.ndim == 5
-    if is_batch_vertices:
-        z_maps = vertex_maps[:, :, :, :, 2]
-        z_maps = 1. / (weight_maps / z_maps).sum(3)
-        z_maps = mask(z_maps, foreground_maps)
-    else:
-        z_maps = vertex_maps[:, :, :, 2]
-        z_maps = 1. / (weight_maps / z_maps).sum(2)
-        z_maps = mask(z_maps, foreground_maps)
+    z_maps = vertex_maps[:, :, :, :, 2]
+    z_maps = 1. / (weight_maps / z_maps).sum(3)
+    z_maps = mask(z_maps, foreground_maps)
     return z_maps
 
 
-def compute_normal_maps(vertex_n_w_maps, vertex_n_c_maps, vertex_maps, weight_maps, foreground_maps, is_batch):
-    normal_w_maps = interpolate(vertex_n_w_maps, vertex_maps, weight_maps, is_batch)
-    normal_c_maps = interpolate(vertex_n_c_maps, vertex_maps, weight_maps, is_batch)
+def compute_normal_maps(vertex_n_w_maps, vertex_n_c_maps, vertex_maps, weight_maps, foreground_maps):
+    normal_w_maps = interpolate(vertex_n_w_maps, vertex_maps, weight_maps)
+    normal_c_maps = interpolate(vertex_n_c_maps, vertex_maps, weight_maps)
     return compute_normal_maps_no_weight(normal_w_maps, normal_c_maps, foreground_maps)
 
 
@@ -320,8 +238,7 @@ def compute_normal_maps_no_weight(normal_w_maps, normal_c_maps, foreground_maps)
     return normal_w_maps, normal_c_maps
 
 
-def compute_color_maps(vertex_t_maps, textures, texture_params_maps, foreground_maps, is_batch_vertices):
-    is_batch_textures = textures.ndim == 4
+def compute_color_maps(vertex_t_maps, textures, texture_params_maps, foreground_maps):
     texture_height, texture_width = textures.shape[-3:-1]
     y_max = texture_params_maps.select(-1, 0)
     x_max = texture_params_maps.select(-1, 1)
@@ -345,14 +262,11 @@ def compute_color_maps(vertex_t_maps, textures, texture_params_maps, foreground_
     w_fc = w_fc / w_sum
     w_cf = w_cf / w_sum
     w_cc = w_cc / w_sum
-    if is_batch_textures:
-        t2 = textures.reshape((textures.shape[0], -1, 3))
-    else:
-        t2 = textures.reshape((-1, 3))
-    t_ff = distribute(t2, t_i_ff, foreground_maps, is_batch_textures, is_batch_vertices, default_value=0.)
-    t_fc = distribute(t2, t_i_fc, foreground_maps, is_batch_textures, is_batch_vertices, default_value=0.)
-    t_cf = distribute(t2, t_i_cf, foreground_maps, is_batch_textures, is_batch_vertices, default_value=0.)
-    t_cc = distribute(t2, t_i_cc, foreground_maps, is_batch_textures, is_batch_vertices, default_value=0.)
+    t2 = textures.reshape((textures.shape[0], -1, 3))
+    t_ff = distribute(t2, t_i_ff, foreground_maps, True, True, default_value=0)
+    t_fc = distribute(t2, t_i_fc, foreground_maps, True, True, default_value=0)
+    t_cf = distribute(t2, t_i_cf, foreground_maps, True, True, default_value=0)
+    t_cc = distribute(t2, t_i_cc, foreground_maps, True, True, default_value=0)
     color_maps = (
             t_ff * w_ff.unsqueeze(-1) + t_fc * w_fc.unsqueeze(-1) +
             t_cf * w_cf.unsqueeze(-1) + t_cc * w_cc.unsqueeze(-1))
@@ -377,11 +291,7 @@ def compute_normals(vertices, faces):
     return normals
 
 
-def interpolate(data, vertex_maps, weight_maps, is_batch):
-    if is_batch:
-        a = ((data / vertex_maps[:, :, :, :, 2:]) * weight_maps[:, :, :, :, None]).sum(3)
-        b = ((1 / vertex_maps[:, :, :, :, 2:]) * weight_maps[:, :, :, :, None]).sum(3)
-    else:
-        a = ((data / vertex_maps[:, :, :, 2:]) * weight_maps[:, :, :, None]).sum(2)
-        b = ((1 / vertex_maps[:, :, :, 2:]) * weight_maps[:, :, :, None]).sum(2)
+def interpolate(data, vertex_maps, weight_maps):
+    a = ((data / vertex_maps[:, :, :, :, 2:]) * weight_maps[:, :, :, :, None]).sum(3)
+    b = ((1 / vertex_maps[:, :, :, :, 2:]) * weight_maps[:, :, :, :, None]).sum(3)
     return a / b

@@ -87,21 +87,21 @@ class TestRendererBlender(unittest.TestCase):
         viewing_angle = math.atan(16. / 60.) * 2
         extrinsic_parameters = nmr.create_extrinsic_camera_parameters_by_looking_at(viewpoints)
         intrinsic_parameters = nmr.create_intrinsic_camera_parameters_by_viewing_angles(
-            viewing_angle, viewing_angle, self.image_h, self.image_w)
+            viewing_angle, viewing_angle, self.image_h, self.image_w, device=viewpoints.device)
         cameras = nmr.create_cameras(extrinsic_parameters, intrinsic_parameters)
 
         return cameras
 
-    def _test_mask_depth(self):
+    def test_mask_depth(self):
         """Test whether a rendered foreground and depth maps by NMR match these by Blender."""
+        renderer = nmr.Renderer(self.image_h, self.image_w)
+        backgrounds = nmr.Backgrounds()
         for oid in tqdm.tqdm(self.object_ids):
             meshes = self.load_mesh(oid)
 
             for view_num in tqdm.tqdm(range(0, 20)):
                 cameras = self.load_camera(oid, view_num)
-                backgrounds = nmr.Backgrounds()
 
-                renderer = nmr.Renderer(self.image_h, self.image_w)
                 images = renderer(meshes, cameras, None, backgrounds)  # [height, width, (RGBAD)]
                 alpha_map = images[:, :, 3].cpu().numpy()
                 depth_map = images[:, :, 4].cpu().numpy()
@@ -112,8 +112,8 @@ class TestRendererBlender(unittest.TestCase):
                 ref_rgba = skimage.io.imread(self.filename_ref_rgba % (oid, view_num)).astype(np.float32) / 255
                 ref_alpha = ref_rgba[:, :, 3]
                 diff_alpha = ref_alpha - alpha_map
-                assert -1 < diff_alpha.min()
-                assert diff_alpha.max() < 1
+                num_diff_pixels = (np.abs(diff_alpha) == 1).sum()
+                assert num_diff_pixels == 0
 
                 # Assertion of depth map.
                 # Difference between depth maps should be small (0.01) at least 90% of pixels.
@@ -126,39 +126,42 @@ class TestRendererBlender(unittest.TestCase):
                 diff_ratio = (diff_threshold < diff_depth[ref_alpha == 1]).mean()
                 assert diff_ratio < diff_max_ratio
 
-    def _test_mask_depth_batch(self):
+    def test_mask_depth_batch(self):
         """Test whether a rendered foreground and depth maps by NMR match these by Blender."""
+        renderer = nmr.Renderer(self.image_h, self.image_w)
+        backgrounds = nmr.Backgrounds()
         for oid in tqdm.tqdm(self.object_ids):
+            # Render images from .obj
             meshes = self.load_mesh(oid)
+            cameras = self.load_camera(oid)
+            images = renderer(meshes, cameras, None, backgrounds)  # [height, width, (RGBAD)]
+            alpha_maps = images[:, :, :, 3].cpu().numpy()
+            depth_maps = images[:, :, :, 4].cpu().numpy()
 
-            for view_num in tqdm.tqdm(range(0, 20)):
-                cameras = self.load_camera(oid)
-                backgrounds = nmr.Backgrounds()
-
-                renderer = nmr.Renderer(self.image_h, self.image_w)
-                images = renderer(meshes, cameras, None, backgrounds)  # [height, width, (RGBAD)]
-                alpha_map = images[:, :, 3].cpu().numpy()
-                depth_map = images[:, :, 4].cpu().numpy()
-
-                # Assertion of alpha map.
-                # There can be small differences, but they must not be greater than one.
-                # (There must not be a difference in the presence or absence of an object.)
+            # Assertion of alpha map.
+            ref_alpha_list = []
+            for view_num in range(20):
                 ref_rgba = skimage.io.imread(self.filename_ref_rgba % (oid, view_num)).astype(np.float32) / 255
                 ref_alpha = ref_rgba[:, :, 3]
-                diff_alpha = ref_alpha - alpha_map
-                assert -1 < diff_alpha.min()
-                assert diff_alpha.max() < 1
+                ref_alpha_list.append(ref_alpha)
+            ref_alpha = np.array(ref_alpha_list)
+            diff_alpha = ref_alpha - alpha_maps
+            num_diff_pixels = (np.abs(diff_alpha) == 1).sum()
+            assert num_diff_pixels == 0
 
-                # Assertion of depth map.
-                # Difference between depth maps should be small (0.01) at least 90% of pixels.
-                diff_threshold = 0.01
-                diff_max_ratio = 0.1
+            # Assertion of depth map.
+            diff_threshold = 0.01
+            diff_max_ratio = 0.1
+            ref_depth_list = []
+            for view_num in range(20):
                 ref_depth = skimage.io.imread(self.filename_ref_depth % (oid, view_num)).astype(np.float32)
                 ref_depth[ref_depth == 65535] = 0
                 ref_depth = ref_depth / 65535. * 20
-                diff_depth = ref_depth - depth_map
-                diff_ratio = (diff_threshold < diff_depth[ref_alpha == 1]).mean()
-                assert diff_ratio < diff_max_ratio
+                ref_depth_list.append(ref_depth)
+            ref_depth = np.array(ref_depth_list)
+            diff_depth = ref_depth - depth_maps
+            diff_ratio = (diff_threshold < diff_depth[ref_alpha == 1]).mean()
+            assert diff_ratio < diff_max_ratio
 
     def test_rgb(self):
         """Quantitative evaluation of rendered images. Outputs have to be checked by humans."""

@@ -41,3 +41,17 @@ def get_dtype_in_cuda(dtype):
         return 'long'
     else:
         raise NotImplementedError
+
+
+def assert_shape(data, shape, is_batch=False):
+    assert isinstance(data, torch.Tensor)
+    if is_batch:
+        if data.ndim == len(shape):
+            data = data.unsqueeze(0)
+        assert data.ndim == len(shape) + 1
+    else:
+        assert data.ndim == len(shape)
+    for s1, s2 in zip(shape, data.shape[-len(shape):]):
+        if s1 is not None:
+            assert s1 == s2
+    return data
