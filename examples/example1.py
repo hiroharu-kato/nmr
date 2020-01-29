@@ -85,7 +85,7 @@ def run():
 
         # Render and save
         images = renderer(meshes, cameras, None, backgrounds)
-        image = images[0, :4].cpu().numpy().transpose((1, 2, 0))
+        image = images[0, :3].cpu().numpy().transpose((1, 2, 0))
         image = (image * 255).astype(np.uint8)
         skimage.io.imsave('/tmp/_tmp_%04d.png' % int(azimuth), image)
 
