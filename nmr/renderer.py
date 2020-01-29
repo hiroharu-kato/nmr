@@ -115,6 +115,9 @@ class Renderer(object):
         reflectance_maps = rasterization.reflectance_maps(normal_w_maps, normal_c_maps)
 
         #
+        coordinate_maps = (vertex_maps * weight_maps[:, :, :, :, None]).sum(-2)
+
+        #
         rgb_maps = color_maps * reflectance_maps.unsqueeze(-1)
         rgb_maps = rasterization.mask(rgb_maps, foreground_maps)
         if self.anti_aliasing:
@@ -127,6 +130,6 @@ class Renderer(object):
         alpha_maps = 1. * alpha_maps
 
         images = torch.cat((rgb_maps, alpha_maps.unsqueeze(-1), depth_maps.unsqueeze(-1), normal_maps), dim=-1)
-        images = images.squeeze()
+        images = images.permute(0, 3, 1, 2)
 
         return images

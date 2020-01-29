@@ -3,22 +3,37 @@ import torch
 from . import utils
 
 
+def compute_viewpoints(azimuth, elevation, distance):
+    utils.assert_shape(azimuth, (None,))
+    utils.assert_shape(elevation, (None,))
+    utils.assert_shape(distance, (None,))
+    x = distance * torch.cos(elevation) * torch.sin(azimuth)
+    y = distance * torch.sin(elevation)
+    z = -distance * torch.cos(elevation) * torch.cos(azimuth)
+    viewpoints = torch.stack((x, y, z), axis=1)
+    return viewpoints
+
+
 def create_extrinsic_camera_parameters_by_looking_at(origin, at=None, up=None):
-    # Viewpoints (origin) must be [3] or [batch_size, 3].
-    origin = utils.assert_shape(origin, (3,), True)
+    # Viewpoints (origin) must be [batch_size, 3].
+    utils.assert_shape(origin, (None, 3))
 
     # Get GPU information
     device = origin.device
 
-    # Points to be looked at (at) must be [3] or [batch_size, 3].
+    # Points to be looked at (at) must be [batch_size, 3].
     if at is None:
         at = torch.as_tensor([0, 0, 0], dtype=torch.float32, device=device)
-    at = utils.assert_shape(at, (3,), True)
+        at = at.unsqueeze(0)
+    else:
+        utils.assert_shape(at, (None, 3))
 
-    # Upper direction (up) must be [3] or [batch_size, 3].
+    # Upper direction (up) must be [batch_size, 3].
     if up is None:
         up = torch.as_tensor([0, 1, 0], dtype=torch.float32, device=device)
-    up = utils.assert_shape(up, (3,), True)
+        up = up.unsqueeze(0)
+    else:
+        utils.assert_shape(up, (None, 3))
 
     origin, at, up = torch.broadcast_tensors(origin, at, up)
     z = utils.normalize(at - origin, axis=-1)
@@ -28,18 +43,14 @@ def create_extrinsic_camera_parameters_by_looking_at(origin, at=None, up=None):
     translations = torch.matmul(rotation_matrices, -origin[:, :, None])
 
     extrinsic_camera_parameters = torch.cat((rotation_matrices, translations), axis=2)
-    extrinsic_camera_parameters = extrinsic_camera_parameters.squeeze()
+
     return extrinsic_camera_parameters
 
 
-def create_intrinsic_camera_parameters_by_viewing_angles(
-        viewing_angles_x, viewing_angles_y, image_h, image_w, device=None):
-    if not isinstance(viewing_angles_x, torch.Tensor):
-        viewing_angles_x = torch.as_tensor(viewing_angles_x, dtype=torch.float32, device=device)
-    if not isinstance(viewing_angles_y, torch.Tensor):
-        viewing_angles_y = torch.as_tensor(viewing_angles_y, dtype=torch.float32, device=device)
-    viewing_angles_x = utils.assert_shape(viewing_angles_x, (), True)
-    viewing_angles_y = utils.assert_shape(viewing_angles_y, (), True)
+def create_intrinsic_camera_parameters_by_viewing_angles(viewing_angles_x, viewing_angles_y, image_h, image_w):
+    utils.assert_shape(viewing_angles_x, (None,))
+    utils.assert_shape(viewing_angles_y, (None,))
+    device = viewing_angles_x.device
 
     fx = 1 / torch.tan(viewing_angles_x / 2) * image_w / 2
     fy = 1 / torch.tan(viewing_angles_y / 2) * image_h / 2
@@ -61,14 +72,14 @@ def create_intrinsic_camera_parameters_by_viewing_angles(
             intrinsic_matrices_tx * tx +
             intrinsic_matrices_ty * ty +
             intrinsic_matrices_base)
-    intrinsic_matrices = intrinsic_matrices.squeeze()
+
     return intrinsic_matrices
 
 
 class Cameras(object):
     def __init__(self, extrinsic_parameters, intrinsic_parameters):
-        extrinsic_parameters = utils.assert_shape(extrinsic_parameters, (3, 4), True)
-        intrinsic_parameters = utils.assert_shape(intrinsic_parameters, (3, 3), True)
+        utils.assert_shape(extrinsic_parameters, (None, 3, 4))
+        utils.assert_shape(intrinsic_parameters, (None, 3, 3))
         self.extrinsic_parameters = extrinsic_parameters
         self.intrinsic_parameters = intrinsic_parameters
 

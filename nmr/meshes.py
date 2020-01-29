@@ -5,26 +5,24 @@ class Meshes(object):
     def __init__(
             self, vertices=None, vertices_t=None, normals=None, faces=None, faces_t=None, faces_n=None,
             textures=None, texture_params=None):
-        # Vertices (vertices) must be [num_vertices, 3].
-        # Texture vertices (vertices_t) must be [num_vertices_t, 2].
-        # Normal vectors (normals) must be [num_normals, 3].
-        # These can be minibatch.
+        # Vertices (vertices) must be [batch_size, num_vertices, 3].
+        # Texture vertices (vertices_t) must be [batch_size, num_vertices_t, 2].
+        # Normal vectors (normals) must be [batch_size, num_normals, 3].
         # Normal vectors can be undefined.
-        vertices = utils.assert_shape(vertices, (None, 3), True)
-        vertices_t = utils.assert_shape(vertices_t, (None, 2), True)
+        utils.assert_shape(vertices, (None, None, 3))
+        utils.assert_shape(vertices_t, (None, None, 2))
         if normals is not None:
-            normals = utils.assert_shape(normals, (None, 3), True)
+            utils.assert_shape(normals, (None, None, 3))
 
         # Indices assigned to faces (faces, faces_t, faces_n) must be [num_faces, 3].
         # faces_n can be undefined.
-        # These cannot be minibatch.
-        faces = utils.assert_shape(faces, (None, 3), False)
-        faces_t = utils.assert_shape(faces_t, (None, 3), False)
+        utils.assert_shape(faces, (None, 3))
+        utils.assert_shape(faces_t, (None, 3))
         if faces_n is not None:
-            faces_n = utils.assert_shape(faces_n, (None, 3), False)
+            utils.assert_shape(faces_n, (None, 3))
 
-        # Texture images (textures) must be [height, width, 3] and can be minibatch.
-        textures = utils.assert_shape(textures, (None, None, 3), True)
+        # Texture images (textures) must be [batch_size, height, width, 3].
+        utils.assert_shape(textures, (None, None, None, 3))
 
         # TODO: assertion for texture_params.
 
