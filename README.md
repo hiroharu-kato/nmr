@@ -17,3 +17,17 @@ These differences are caused by
 - reason 1
 - reason 2
 - reason 3
+
+
+## Examples
+
+### Example1: drawing a teapot
+The following command
+
+```sh
+python3 examples/example1.py
+```
+
+outputs the following image.
+
+![](https://raw.githubusercontent.com/hiroharu-kato/nmr/master/examples/results/example1.gif)

@@ -10,6 +10,7 @@ def compute_viewpoints(azimuth, elevation, distance):
     x = distance * torch.cos(elevation) * torch.sin(azimuth)
     y = distance * torch.sin(elevation)
     z = -distance * torch.cos(elevation) * torch.cos(azimuth)
+    x, y, z = torch.broadcast_tensors(x, y, z)
     viewpoints = torch.stack((x, y, z), axis=1)
     return viewpoints
 
@@ -52,8 +53,8 @@ def create_intrinsic_camera_parameters_by_viewing_angles(viewing_angles_x, viewi
     utils.assert_shape(viewing_angles_y, (None,))
     device = viewing_angles_x.device
 
-    fx = 1 / torch.tan(viewing_angles_x / 2) * image_w / 2
-    fy = 1 / torch.tan(viewing_angles_y / 2) * image_h / 2
+    fx = 1 / torch.tan(viewing_angles_x / 2) * min(image_h, image_w) / 2
+    fy = 1 / torch.tan(viewing_angles_y / 2) * min(image_h, image_w) / 2
     tx = image_w / 2
     ty = image_h / 2
     intrinsic_matrices_base = torch.as_tensor([[0, 0, 0], [0, 0, 0], [0, 0, 1]], dtype=torch.float32, device=device)

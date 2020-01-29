@@ -2,9 +2,6 @@ import math
 import os
 import unittest
 
-# Dependency on cpm can be removed when new PyTorch with
-# [this pull request](https://github.com/pytorch/pytorch/pull/24947) is released.
-# This is described in the "CuPy bridge" section of the Chainer-PyTorch Migration Guide.
 import numpy as np
 import skimage
 import torch
@@ -134,7 +131,7 @@ class TestRendererBlender(unittest.TestCase):
             images = np.stack(images, axis=0)
             return images
 
-    def test_mask_depth(self):
+    def _test_mask_depth(self):
         """Test whether a rendered foreground and depth maps by NMR match these by Blender."""
         renderer = nmr.Renderer(self.image_h, self.image_w)
         backgrounds = nmr.Backgrounds()
@@ -165,7 +162,7 @@ class TestRendererBlender(unittest.TestCase):
                 diff_ratio = (diff_threshold < diff_depth[ref_alpha == 1]).mean()
                 assert diff_ratio < diff_max_ratio
 
-    def test_mask_depth_batch(self):
+    def _test_mask_depth_batch(self):
         """Test whether a rendered foreground and depth maps by NMR match these by Blender."""
         renderer = nmr.Renderer(self.image_h, self.image_w)
         backgrounds = nmr.Backgrounds()
@@ -210,7 +207,7 @@ class TestRendererBlender(unittest.TestCase):
             images_b = self.load_reference_images(oid, view_num)[0].transpose((1, 2, 0))
             skimage.io.imsave(os.path.join(output_directory, '%s_blender.png' % oid), images_b)
 
-    def test_rgb_batch(self):
+    def _test_rgb_batch(self):
         """Quantitative evaluation of rendered images. Outputs have to be checked by humans."""
         output_directory = '/tmp'
         view_num = 9

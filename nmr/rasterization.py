@@ -124,8 +124,8 @@ def compute_face_index_maps(vertices, faces, image_h, image_w, near, far):
             const int nf = ${num_faces};
             int bn = i / (ih * iw);  // batch number
             const int pn = i % (ih * iw);  // pixel number
-            const float yp = ih - (pn / ih + 0.5);
-            const float xp = pn % ih + 0.5;
+            const float yp = ih - (pn / iw + 0.5);
+            const float xp = pn % iw + 0.5;
             
             float* face = (float*)&faces[bn * nf * 9];  // pointer to current face
             float depth_min = ${far};
